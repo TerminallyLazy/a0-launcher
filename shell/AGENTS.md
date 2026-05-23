@@ -47,6 +47,10 @@ This scope owns:
   without credentials.
 - External links should open through Electron `shell.openExternal` only after
   validation.
+- Instance UI tabs are shell-owned `WebContentsView`s. Renderer code may request
+  open/select/close/reload/detach and report viewport bounds, but URL
+  resolution, URL validation, web contents lifecycle, and detached windows stay
+  in `shell/main.js`.
 
 ## Content Loading Contracts
 
@@ -96,6 +100,7 @@ After shell changes, run:
 ```bash
 node --check shell/main.js
 node --check shell/preload.js
+node --test shell/instance_tabs.test.js
 git diff --check
 ```
 

@@ -170,7 +170,7 @@ function renderDockerInstance(list, c, state) {
     openBtn.type = "button";
     openBtn.textContent = "Open UI";
     openBtn.addEventListener("click", () => {
-      window.dockerManagerActions?.openUi?.(c?.containerId || "");
+      window.dockerManagerActions?.openInstanceUi?.({ kind: "local", containerId: c?.containerId || "" });
     });
     actions.appendChild(openBtn);
 
@@ -245,7 +245,7 @@ function renderRemoteInstance(list, remote) {
   openBtn.type = "button";
   openBtn.textContent = "Open UI";
   openBtn.addEventListener("click", () => {
-    window.dockerManagerActions?.openRemoteInstance?.(remote?.id || "");
+    window.dockerManagerActions?.openInstanceUi?.({ kind: "remote", instanceId: remote?.id || "" });
   });
   actions.appendChild(openBtn);
 

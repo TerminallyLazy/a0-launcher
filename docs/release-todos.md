@@ -22,6 +22,11 @@ Use this checklist before cutting the next launcher release.
   - `a0-launcher-<version>-macos-x86.dmg`
   - `a0-launcher-<version>-macos-x86.zip`
 - Verify `content.json` is present and built from the release tag.
+- Validate instance tabs on macOS via cloud runner or manual macOS test:
+  - local `Open UI` opens a launcher tab
+  - opening the same instance focuses the existing tab
+  - detach opens a standalone window
+  - closing the detached window does not stop the instance
 - Expected asset count with Windows ARM restored and RPM omitted: 11 assets.
 - Verify with:
 

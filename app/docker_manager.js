@@ -101,7 +101,8 @@ function snapshot() {
     storage: store.storage || null,
     progress: store.progress || null,
     portPreferences: store.portPreferences || null,
-    retentionPolicy: store.retentionPolicy || null
+    retentionPolicy: store.retentionPolicy || null,
+    instanceTabs: store.instanceTabs || { tabs: [], activeTabId: "" }
   };
 }
 
@@ -110,6 +111,15 @@ function emitState() {
   window.__dmLastState = next;
   window.dispatchEvent(new CustomEvent("dm:state", { detail: next }));
   renderTerminalDock(next);
+}
+
+function applyInstanceTabsSnapshot(snap) {
+  const tabs = Array.isArray(snap?.tabs) ? snap.tabs : [];
+  store.instanceTabs = {
+    tabs,
+    activeTabId: typeof snap?.activeTabId === "string" ? snap.activeTabId : ""
+  };
+  emitState();
 }
 
 function localUrl(value) {
@@ -242,20 +252,55 @@ async function refresh() {
   }
 }
 
-async function openUi(containerId = "") {
+async function openInstanceUi(target = {}) {
   const api = window.dockerManagerAPI;
-  if (!api) return;
+  if (!api || typeof api.openInstanceUi !== "function") {
+    if (api && target?.kind === "remote" && typeof api.openRemoteInstance === "function") {
+      const res = await api.openRemoteInstance(target.instanceId || "");
+      if (isErrorResponse(res)) setBanner("error", res.message);
+      return;
+    }
+    if (api && target?.kind === "local") {
+      const fn = target.containerId && typeof api.openContainerUi === "function"
+        ? () => api.openContainerUi(target.containerId)
+        : typeof api.openUi === "function" ? () => api.openUi() : null;
+      if (fn) {
+        const res = await fn();
+        if (isErrorResponse(res)) setBanner("error", res.message);
+      }
+    }
+    return;
+  }
   try {
-    const res = containerId && typeof api.openContainerUi === "function"
-      ? await api.openContainerUi(containerId)
-      : typeof api.openUi === "function"
-        ? await api.openUi()
-        : null;
+    const payload = target && typeof target === "object" ? target : {};
+    const res = await api.openInstanceUi(payload);
     if (isErrorResponse(res)) setBanner("error", res.message);
-    else if (res?.opened) window.toastFrontendInfo?.("Instance UI opened.", "Agent Zero", 2, "dm-open-ui");
+    else if (res?.opened && !res?.focusedExisting) {
+      window.toastFrontendInfo?.("Instance UI opened.", "Agent Zero", 2, "dm-open-ui");
+    }
   } catch (e) {
     setBanner("error", e?.message || "Unable to open UI");
   }
+}
+
+async function openUi(containerId = "") {
+  return openInstanceUi({ kind: "local", containerId: containerId || "" });
+}
+
+async function selectInstanceTab(id) {
+  await window.dockerManagerAPI?.selectInstanceTab?.(id);
+}
+
+async function closeInstanceTab(id) {
+  await window.dockerManagerAPI?.closeInstanceTab?.(id);
+}
+
+async function reloadInstanceTab(id) {
+  await window.dockerManagerAPI?.reloadInstanceTab?.(id);
+}
+
+async function detachInstanceTab(id) {
+  await window.dockerManagerAPI?.detachInstanceTab?.(id);
 }
 
 async function openHomepage() {
@@ -319,6 +364,15 @@ async function openDockerDownload() {
     }
   }
   window.open("https://www.docker.com/products/docker-desktop/", "_blank");
+}
+
+let postOperationRefreshTimer = 0;
+
+function schedulePostOperationRefresh() {
+  window.clearTimeout(postOperationRefreshTimer);
+  postOperationRefreshTimer = window.setTimeout(() => {
+    refresh();
+  }, 350);
 }
 
 async function runDockerOperation(label, action, successMessage) {
@@ -414,14 +468,39 @@ async function deleteRemoteInstance(id) {
 }
 
 async function openRemoteInstance(id) {
-  const api = window.dockerManagerAPI;
-  if (!api || typeof api.openRemoteInstance !== "function") return;
-  try {
-    const res = await api.openRemoteInstance(id);
-    if (isErrorResponse(res)) setBanner("error", res.message);
-    else if (res?.opened) window.toastFrontendInfo?.("Remote instance opened.", "Agent Zero", 2, "dm-open-remote");
-  } catch (e) {
-    setBanner("error", e?.message || "Unable to open remote instance");
+  return openInstanceUi({ kind: "remote", instanceId: id || "" });
+}
+
+let instanceTabBoundsTimer = 0;
+
+function readInstanceTabViewportBounds() {
+  const el = document.getElementById("dmInstanceTabViewport");
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  return {
+    x: Math.round(rect.left),
+    y: Math.round(rect.top),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height)
+  };
+}
+
+function syncInstanceTabBounds() {
+  window.clearTimeout(instanceTabBoundsTimer);
+  instanceTabBoundsTimer = window.setTimeout(() => {
+    const bounds = readInstanceTabViewportBounds();
+    if (bounds) window.dockerManagerAPI?.setInstanceTabBounds?.(bounds);
+  }, 40);
+}
+
+function initInstanceTabBoundsObserver() {
+  const el = document.getElementById("dmInstanceTabViewport");
+  if (!el) return;
+  syncInstanceTabBounds();
+  window.addEventListener("resize", syncInstanceTabBounds);
+  if (typeof ResizeObserver === "function") {
+    const observer = new ResizeObserver(syncInstanceTabBounds);
+    observer.observe(el);
   }
 }
 
@@ -439,6 +518,12 @@ window.dockerManagerActions = {
   addRemoteInstance,
   deleteRemoteInstance,
   openRemoteInstance,
+  openInstanceUi,
+  selectInstanceTab,
+  closeInstanceTab,
+  reloadInstanceTab,
+  detachInstanceTab,
+  syncInstanceTabBounds,
   async setPortPreferences(prefs) {
     const api = window.dockerManagerAPI;
     if (!api || typeof api.setPortPreferences !== "function") return false;
@@ -773,6 +858,16 @@ function initSubscriptions() {
     api.onProgress((progress) => {
       store.progress = progress && typeof progress === "object" ? progress : null;
       emitState();
+      const status = typeof progress?.status === "string" ? progress.status : "";
+      if (status === "completed" || status === "failed" || status === "canceled") {
+        schedulePostOperationRefresh();
+      }
+    });
+  }
+
+  if (typeof api.onInstanceTabsChange === "function") {
+    api.onInstanceTabsChange((tabsSnapshot) => {
+      applyInstanceTabsSnapshot(tabsSnapshot);
     });
   }
 }
@@ -782,5 +877,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadHeaderLogo();
   emitState();
   initSubscriptions();
+  initInstanceTabBoundsObserver();
+  if (typeof window.dockerManagerAPI?.getInstanceTabs === "function") {
+    try {
+      const tabsSnapshot = await window.dockerManagerAPI.getInstanceTabs();
+      if (!isErrorResponse(tabsSnapshot)) applyInstanceTabsSnapshot(tabsSnapshot);
+    } catch {
+      // ignore; tab state can still arrive through the live subscription
+    }
+  }
   await refresh();
 });

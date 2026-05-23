@@ -53,6 +53,9 @@ This scope owns:
   Dashboard should go through the shell action where one exists; direct
   `window.open` should stay limited to safe public links such as Docker install
   help.
+- Instance tab chrome is renderer-owned, but embedded Agent Zero pages are not.
+  The renderer computes the tab viewport bounds and sends them through preload;
+  the shell owns the `WebContentsView` attached to that rectangle.
 
 ## UI And Language Contracts
 

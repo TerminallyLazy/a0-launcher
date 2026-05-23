@@ -26,6 +26,8 @@ This scope owns:
 - `storage-summary/`: storage overview metrics.
 - `settings/`: port preferences and retention policy controls.
 - `help/`: concise static help in the install tab.
+- `instance-tabs/`: browser-style tab chrome, active-tab controls, empty state,
+  and viewport bounds reporting for shell-owned Agent Zero UI views.
 
 ## State And Event Contracts
 
@@ -57,6 +59,9 @@ This scope owns:
 - Storage UI must say `Storage volumes` when referring to Docker volumes.
 - Settings owns persistence for preferred UI/SSH ports and retained-instance
   count. Do not scatter those controls into install or instance cards.
+- `Open UI` opens local and remote instances in a launcher tab by default.
+  Reopening the same target focuses the existing tab. Detach moves the target
+  into a standalone secure Electron window without stopping the instance.
 
 ## Development Guidance
 
