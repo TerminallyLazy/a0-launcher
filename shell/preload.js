@@ -80,6 +80,13 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
   openRemoteInstance: (id) => ipcRenderer.invoke('docker-manager:openRemoteInstance', { id }),
   openHomepage: () => ipcRenderer.invoke('docker-manager:openHomepage'),
   openCliTerminal: (host) => ipcRenderer.invoke('docker-manager:openCliTerminal', { host }),
+  readContainerLogs: (containerId, opts) => {
+    const o = opts && typeof opts === 'object' ? opts : {};
+    return ipcRenderer.invoke('docker-manager:readContainerLogs', {
+      containerId,
+      maxLines: o.maxLines
+    });
+  },
   onStateChange: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, state) => callback(state);
@@ -91,5 +98,17 @@ contextBridge.exposeInMainWorld('dockerManagerAPI', {
     const listener = (_event, progress) => callback(progress);
     ipcRenderer.on('docker-manager:progress', listener);
     return () => ipcRenderer.removeListener('docker-manager:progress', listener);
+  }
+});
+
+contextBridge.exposeInMainWorld('a0TabsAPI', {
+  list: () => ipcRenderer.invoke('a0tabs:list'),
+  activate: (id) => ipcRenderer.send('a0tabs:activate', { id }),
+  close: (id) => ipcRenderer.send('a0tabs:close', { id }),
+  onChanged: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('a0tabs:changed', listener);
+    return () => ipcRenderer.removeListener('a0tabs:changed', listener);
   }
 });

@@ -28,6 +28,7 @@
 </head>
 
 <body class="dark-mode device-pointer" x-data>
+  <div id="a0TabStrip" class="a0-tabstrip" hidden></div>
   <div class="dm-page">
     <div class="dm-header">
       <x-component path="components/docker-manager/status-header/index.html"></x-component>
@@ -56,6 +57,7 @@
   <div id="dmToastStack" class="dm-toast-stack" aria-live="polite" aria-atomic="false"></div>
   <div id="dmTerminalDock" class="dm-terminal-dock" aria-live="polite"></div>
 
+  <script type="module" src="./instance-tabs.js"></script>
   <script type="module" src="./docker_manager.js"></script>
 </body>
 

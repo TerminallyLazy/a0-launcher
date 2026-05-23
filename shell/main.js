@@ -1,4 +1,4 @@
-const { app, BrowserWindow, net, ipcMain, shell, Tray, Menu, nativeImage, protocol } = require('electron');
+const { app, BrowserWindow, WebContentsView, net, ipcMain, shell, Tray, Menu, nativeImage, protocol } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const fs = require('node:fs/promises');
@@ -448,6 +448,9 @@ function createWindow() {
   mainWindow.on('hide', updateTrayForWindow);
   mainWindow.on('minimize', updateTrayForWindow);
   mainWindow.on('restore', updateTrayForWindow);
+
+  // Keep the active embedded A0 instance sized to the window.
+  mainWindow.on('resize', reflowA0Tabs);
 }
 
 function isWindowShown() {
@@ -625,23 +628,92 @@ function isAllowedHttpUrl(value) {
   }
 }
 
-function openAgentZeroUiWindow(url, title = 'Agent Zero') {
-  const iconPath = path.join(__dirname, 'assets',
-    process.platform === 'win32' ? 'icon.ico' : 'icon.png'
-  );
-  const uiWindow = new BrowserWindow({
-    width: 1280,
-    height: 900,
-    title,
-    icon: iconPath,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true
+// ---------------------------------------------------------------------------
+// Agent Zero instance tabs
+// A0 instances are embedded inside the launcher window as WebContentsViews and
+// surfaced as tabs alongside the launcher's own "Home" view. The renderer draws
+// the tab strip; the main process owns the views and their layout.
+// ---------------------------------------------------------------------------
+const A0_TABBAR_HEIGHT = 40;
+const a0Tabs = new Map(); // id -> { view, title }
+let a0TabSeq = 0;
+let activeA0TabId = 'home';
+
+function a0TabList() {
+  return {
+    activeId: activeA0TabId,
+    tabs: Array.from(a0Tabs.entries()).map(([id, tab]) => ({ id, title: tab.title }))
+  };
+}
+
+function broadcastA0Tabs() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('a0tabs:changed', a0TabList());
+  }
+}
+
+function reflowA0Tabs() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const { width, height } = mainWindow.getContentBounds();
+  for (const [id, tab] of a0Tabs) {
+    const visible = id === activeA0TabId;
+    tab.view.setVisible(visible);
+    if (visible) {
+      tab.view.setBounds({
+        x: 0,
+        y: A0_TABBAR_HEIGHT,
+        width,
+        height: Math.max(0, height - A0_TABBAR_HEIGHT)
+      });
+    }
+  }
+}
+
+function activateA0Tab(id) {
+  if (id !== 'home' && !a0Tabs.has(id)) return;
+  activeA0TabId = id;
+  reflowA0Tabs();
+  broadcastA0Tabs();
+}
+
+function openA0Tab(url, title = 'Agent Zero') {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return dockerManager.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Launcher window is not available.' });
+  }
+  const id = `a0-${++a0TabSeq}`;
+  const view = new WebContentsView({
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  view.webContents.loadURL(url);
+  view.webContents.on('page-title-updated', (_event, newTitle) => {
+    const tab = a0Tabs.get(id);
+    const trimmed = String(newTitle || '').trim();
+    if (tab && trimmed) {
+      tab.title = trimmed;
+      broadcastA0Tabs();
     }
   });
-  uiWindow.loadURL(url);
-  return uiWindow;
+  mainWindow.contentView.addChildView(view);
+  a0Tabs.set(id, { view, title });
+  activeA0TabId = id;
+  reflowA0Tabs();
+  broadcastA0Tabs();
+  return { opened: true, id };
+}
+
+function closeA0Tab(id) {
+  const tab = a0Tabs.get(id);
+  if (!tab) return;
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.contentView.removeChildView(tab.view);
+    }
+  } catch { /* ignore */ }
+  try { tab.view.webContents.close(); } catch { /* ignore */ }
+  a0Tabs.delete(id);
+  if (activeA0TabId === id) activeA0TabId = 'home';
+  reflowA0Tabs();
+  broadcastA0Tabs();
 }
 
 function shellSingleQuote(value) {
@@ -1186,23 +1258,8 @@ ipcMain.handle('docker-manager:openUi', async () => {
       return dockerManager.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI URL is not available.' });
     }
 
-    // Open the A0 UI inside a new Electron window (not the system browser).
-    const iconPath = path.join(__dirname, 'assets',
-      process.platform === 'win32' ? 'icon.ico' : 'icon.png'
-    );
-    const uiWindow = new BrowserWindow({
-      width: 1280,
-      height: 900,
-      title: 'Agent Zero',
-      icon: iconPath,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true
-      }
-    });
-    uiWindow.loadURL(url);
-    return { opened: true };
+    // Embed the A0 UI as a tab inside the launcher window.
+    return openA0Tab(url, 'Agent Zero');
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
@@ -1220,22 +1277,7 @@ ipcMain.handle('docker-manager:openContainerUi', async (_event, body) => {
       return dockerManager.toErrorResponse({ code: 'UI_UNAVAILABLE', message: 'Agent Zero UI URL is not available.' });
     }
 
-    const iconPath = path.join(__dirname, 'assets',
-      process.platform === 'win32' ? 'icon.ico' : 'icon.png'
-    );
-    const uiWindow = new BrowserWindow({
-      width: 1280,
-      height: 900,
-      title: 'Agent Zero',
-      icon: iconPath,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true
-      }
-    });
-    uiWindow.loadURL(url);
-    return { opened: true };
+    return openA0Tab(url, 'Agent Zero');
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
@@ -1250,8 +1292,7 @@ ipcMain.handle('docker-manager:openRemoteInstance', async (_event, body) => {
     if (!isAllowedHttpUrl(url)) {
       return dockerManager.toErrorResponse({ code: 'INVALID_REMOTE_INSTANCE', message: 'Invalid remote instance' });
     }
-    openAgentZeroUiWindow(url, remote?.name || 'Agent Zero');
-    return { opened: true };
+    return openA0Tab(url, remote?.name || 'Agent Zero');
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
@@ -1274,6 +1315,30 @@ ipcMain.handle('docker-manager:openCliTerminal', async (_event, body) => {
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
+});
+
+ipcMain.handle('docker-manager:readContainerLogs', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const containerId = typeof body.containerId === 'string' ? body.containerId : '';
+    const maxLines = Number(body.maxLines);
+    return await dockerManager.readContainerLogs(containerId, {
+      maxLines: Number.isFinite(maxLines) ? maxLines : undefined
+    });
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+// Agent Zero instance tabs - renderer (tab strip) <-> main process.
+ipcMain.handle('a0tabs:list', () => a0TabList());
+
+ipcMain.on('a0tabs:activate', (_event, body) => {
+  if (isPlainObject(body) && typeof body.id === 'string') activateA0Tab(body.id);
+});
+
+ipcMain.on('a0tabs:close', (_event, body) => {
+  if (isPlainObject(body) && typeof body.id === 'string') closeA0Tab(body.id);
 });
 
 // ---------------------------------------------------------------------------
