@@ -617,24 +617,6 @@ function isAllowedHttpUrl(value) {
   return isAllowedRemoteInstanceUrl(value);
 }
 
-function openAgentZeroUiWindow(url, title = 'Agent Zero') {
-  const iconPath = path.join(__dirname, 'assets',
-    process.platform === 'win32' ? 'icon.ico' : 'icon.png'
-  );
-  const uiWindow = new BrowserWindow({
-    width: 1280,
-    height: 900,
-    title,
-    icon: iconPath,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true
-    }
-  });
-  uiWindow.loadURL(url);
-  return uiWindow;
-}
 
 function getInstanceTabsSnapshot() {
   return makeTabsSnapshot(instanceTabs, activeInstanceTabId);
@@ -1664,6 +1646,19 @@ ipcMain.handle('docker-manager:openCliTerminal', async (_event, body) => {
     if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
     const host = typeof body.host === 'string' ? body.host : '';
     return openA0CliTerminal(host);
+  } catch (error) {
+    return dockerManager.toErrorResponse(error);
+  }
+});
+
+ipcMain.handle('docker-manager:readContainerLogs', async (_event, body) => {
+  try {
+    if (!isPlainObject(body)) return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid request' });
+    const containerId = typeof body.containerId === 'string' ? body.containerId : '';
+    const maxLines = Number(body.maxLines);
+    return await dockerManager.readContainerLogs(containerId, {
+      maxLines: Number.isFinite(maxLines) ? maxLines : undefined
+    });
   } catch (error) {
     return dockerManager.toErrorResponse(error);
   }
