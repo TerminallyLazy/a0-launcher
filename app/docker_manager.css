@@ -1153,6 +1153,13 @@ body, html {
   padding: 0 0.5rem;
   background: color-mix(in srgb, var(--color-background) 90%, #000 10%);
   border-bottom: 1px solid var(--dm-line-soft);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.a0-tabstrip::-webkit-scrollbar {
+  display: none;
 }
 
 body.has-a0-tabs {
@@ -1162,6 +1169,7 @@ body.has-a0-tabs {
 .a0-tab {
   display: inline-flex;
   align-items: center;
+  flex: none;
   height: 31px;
   max-width: 15rem;
   border: 1px solid transparent;
