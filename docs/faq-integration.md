@@ -105,6 +105,10 @@ status used by A0. Check Browser status in Launcher instead.
 Choose the normal browser profile when you want Agent Zero to use your existing
 browser and its signed-in sites. That path needs the browser's remote-debugging
 approval. Save a changed browser selection before using Set up browser.
+While a selection is unsaved, Launcher shows **Not applied**, disables Retry
+and preparation, and offers **Save and connect**. The previous connection's
+error is not the result of testing the newly selected browser. A completed
+connection test keeps its typing/capture result visible in the setup assistant.
 
 ## Can a tunnel keep me signed in while my computer is locked?
 

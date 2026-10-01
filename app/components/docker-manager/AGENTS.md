@@ -98,6 +98,12 @@ This scope owns:
   approval). Never ask controlled profiles to enable the inspect-page switch.
   An unrelated browser's endpoint must not suppress selected-profile guidance;
   preparation failures must preserve the actual runtime reason.
+  Unsaved browser choices show Not applied and Save and connect; preparation
+  and Retry stay disabled until saved. Runtime refresh must not label the draft
+  choice with the previous browser's failure or readiness.
+  Connection tests retain a visible outcome from their correlated verified
+  evidence even when shared readiness is unavailable. This receipt describes
+  the completed test, not a durable permission or future-readiness guarantee.
 
 - Keep component scripts pure enough to rerender repeatedly from state without accumulating duplicate event listeners.
 - Use stable element ids inside a component only within that component's loaded fragment; do not rely on ids owned by sibling components.

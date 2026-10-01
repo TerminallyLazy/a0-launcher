@@ -372,6 +372,16 @@ function browserSetupHint(browser = {}) {
     : "Open Chrome or Chromium at chrome://inspect/#remote-debugging, Edge at edge://inspect/#remote-debugging, or Opera at opera://inspect/#remote-debugging. Brave and Vivaldi are supported too. Turn on ‘Allow remote debugging for this browser instance,’ then click Set up browser again.";
 }
 
+function browserSelectionPresentation(applied, selected, browser, allowed) {
+  const pending = String(selected || "") !== String(applied || "");
+  return {
+    pending,
+    detail: pending ? "Save and connect to use this browser. The current connection still uses your previous selection." : browserSupportDetail(allowed, browser),
+    readiness: pending ? "Not applied" : capabilityReadinessLabel(allowed, browser),
+    saveLabel: pending ? "Save and connect" : "Save"
+  };
+}
+
 function watchBrowserSetupFailure(tabId, browser = {}) {
   let timeoutId = 0;
   const stop = () => {
@@ -515,19 +525,34 @@ function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
   const browserLabel = dialog.querySelector("[data-browser-readiness]");
   const browserSupport = dialog.querySelector("[data-browser-support-message]");
   const browserSetupButton = dialog.querySelector("[data-prepare-browser]");
+  const browserSelectionInput = dialog.querySelector("#hostAccessBrowser");
+  let appliedBrowserSelection = config.browserSelection;
+  let currentActionMessage = actionMessage;
   const browserAllowedInForm = () => configuredInput?.checked === true && browserInput?.checked === true;
   const syncBrowserPresentation = () => {
     const allowed = browserAllowedInForm();
-    const detail = browserSupportDetail(allowed, browser);
-    if (browserLabel) browserLabel.textContent = capabilityReadinessLabel(allowed, browser);
+    const presentation = browserSelectionPresentation(appliedBrowserSelection, browserSelectionInput?.value, browser, allowed);
+    const detail = presentation.detail;
+    if (browserLabel) browserLabel.textContent = presentation.readiness;
     if (browserSupport) {
       browserSupport.textContent = detail;
       browserSupport.hidden = !detail;
     }
     if (browserSetupButton) {
       browserSetupButton.hidden = !(allowed && browserSetupAvailable(browser));
+      browserSetupButton.disabled = presentation.pending;
+    }
+    const retry = dialog.querySelector("[data-retry]");
+    if (retry) retry.disabled = presentation.pending;
+    const save = dialog.querySelector('button[type="submit"]');
+    if (save) save.textContent = presentation.saveLabel;
+    const notice = dialog.querySelector("[data-host-action-notice]");
+    if (notice) {
+      notice.textContent = presentation.pending ? detail : currentActionMessage;
+      notice.hidden = !notice.textContent;
     }
   };
+  browserSelectionInput?.addEventListener("change", syncBrowserPresentation);
   configuredInput?.addEventListener("change", syncBrowserPresentation);
   browserInput?.addEventListener("change", syncBrowserPresentation);
   syncBrowserPresentation();
@@ -622,6 +647,8 @@ function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
     const nextComputerSetup = computerUseSetupState(nextConfig, nextRuntime);
     computerSetup = nextComputerSetup;
     const nextActionMessage = hostAccessActionMessage(nextConfig, nextRuntime);
+    appliedBrowserSelection = nextConfig.browserSelection;
+    currentActionMessage = nextActionMessage;
     const nextStateName = String(nextRuntime.state || "disconnected");
     const computerLabel = dialog.querySelector("[data-computer-use-readiness]");
     const connectionLabelElement = dialog.querySelector("[data-host-connection-label]");
@@ -636,7 +663,6 @@ function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
       connectionDetailElement.textContent = nextRuntime.hostLabel || nextGateway.host_label || "This computer";
     }
     if (statusDot) statusDot.className = `dm-host-status-dot ${nextStateName}`;
-    syncBrowserPresentation();
     if (notice) {
       notice.textContent = nextActionMessage;
       notice.hidden = !nextActionMessage;
@@ -648,6 +674,7 @@ function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
       setupButton.disabled = nextComputerSetup.setupState === "checking";
     }
     if (restartButton) restartButton.hidden = !nextComputerSetup.restartRequired;
+    syncBrowserPresentation();
   };
   window.addEventListener("dm:state", onState);
   dialog.__hostAccessCleanup = () => window.removeEventListener("dm:state", onState);
@@ -675,6 +702,7 @@ export {
   bindScopeDependency,
   bindHostAccessState,
   browserSetupHint,
+  browserSelectionPresentation,
   watchBrowserSetupFailure,
   switchLineHtml
 };

@@ -8,6 +8,19 @@ export function setupChoices(config = {}) {
   return Object.fromEntries(scopes.map(key => [key, existing && config.scopes?.[key] === true]));
 }
 
+export function verificationMessage(result, capability) {
+  const evidence = result?.result;
+  if (!['browser', 'computer_use'].includes(capability) || result?.accepted !== true || evidence?.verified !== true || evidence.capability !== capability) {
+    throw new Error('Connection test did not return verified evidence. Try again.');
+  }
+  const required = capability === 'browser' ? ['test_page_input', 'fresh_capture'] : ['fresh_capture'];
+  if (!Array.isArray(evidence.evidence) || !required.every(item => evidence.evidence.includes(item))) {
+    throw new Error('Connection test evidence is incomplete. Try again.');
+  }
+  return capability === 'browser' ? 'Browser test passed: typing and capture checked on a temporary page.'
+    : 'Computer test passed: fresh capture checked. Desktop input was not tested.';
+}
+
 export function localSetupSteps(tab) {
   const runtime = tab.hostAccess || {};
   const config = runtime.config || {};
@@ -69,6 +82,10 @@ export function openComputerSetup(initialTab, state, openAdvanced, resolveConfig
   const style = document.createElement('style');
   style.textContent = `.dm-computer-setup{width:min(660px,calc(100vw - 32px));max-height:min(760px,calc(100dvh - 40px))}.dm-computer-setup .dm-dialog-body{display:block;overflow:auto}.dm-computer-setup h2{margin:8px 0 0;font-size:1.25rem}.dm-computer-setup p{line-height:1.45;margin:10px 0}.dm-setup-choices{display:flex;gap:20px;flex-wrap:wrap;margin:10px 0}.dm-setup-choices label{display:flex;align-items:center;gap:8px;min-height:44px}.dm-setup-steps{list-style:none;margin:20px 0;padding:0}.dm-setup-steps li{padding:14px 0;border-top:1px solid var(--color-border)}.dm-setup-steps li strong{display:block}.dm-setup-steps p{margin:6px 0;opacity:.8}.dm-setup-steps .button{margin-top:6px}.dm-computer-setup summary{cursor:pointer;min-height:44px;align-content:center}.dm-computer-setup .dm-dialog-footer{flex-wrap:wrap}.dm-computer-setup button:focus-visible,.dm-computer-setup input:focus-visible{outline:2px solid currentColor;outline-offset:3px}`;
   dialog.append(style);
+  const testResult = document.createElement('p');
+  testResult.setAttribute('role', 'status');
+  testResult.hidden = true;
+  dialog.querySelector('.dm-dialog-body').append(testResult);
   const renderSteps = steps => {
     if (closed) return;
     dialog.querySelector('[data-steps]').innerHTML = steps.filter(s=>s.id === 'connection' ||
@@ -141,15 +158,21 @@ export function openComputerSetup(initialTab, state, openAdvanced, resolveConfig
         for (const key of ['browser','computer_use']) dialog.querySelector(`[data-choice="${key}"]`).checked = request.capabilities.includes(key);
         dialog.querySelector('[data-pair-state]').textContent = `Confirm “${request.host_label}” on the original device. Then allow access here.`;
       } else if (button.dataset.test) {
+        testResult.hidden = false;
+        testResult.textContent = 'Checking the selected capability…';
         const result = await window.dockerManagerActions.hostGatewayCommand(tab.id,'verify_host_setup',{capability:button.dataset.test});
         if (result === false) throw new Error('Connection test did not complete. Check the host status and try again.');
+        if (!closed) testResult.textContent = verificationMessage(result, button.dataset.test);
       } else if (button.dataset.step) {
         const action = {setup_computer:'setup_computer_use',restart_launcher:'restart_computer_use'}[button.dataset.step] || button.dataset.step;
         if (action === 'reconnect' && tab.hostAccess?.suppressed !== true) await window.dockerManagerActions.retryHostGateway(tab.id);
         else await window.dockerManagerActions.hostGatewayCommand(tab.id,action,{prompt:['accessibility_required','screen_recording_required'].includes(button.dataset.reason)});
       }
       await refresh();
-    } catch (error) { window.toastFrontendError?.(error.message,'Computer setup'); }
+    } catch (error) {
+      if (!closed && button.dataset.test) { testResult.hidden = false; testResult.textContent = error.message; }
+      window.toastFrontendError?.(error.message,'Computer setup');
+    }
     finally { busy=false;button.disabled=false; }
   });
   const timer = window.setInterval(refresh,5000);

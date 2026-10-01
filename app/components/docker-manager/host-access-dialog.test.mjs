@@ -7,6 +7,7 @@ const {
   bindScopeDependency,
   browserSetupAvailable,
   browserSetupHint,
+  browserSelectionPresentation,
   browserSupportDetail,
   browserSupportMessage,
   capabilityReadinessLabel,
@@ -371,6 +372,24 @@ test('Controlled profiles use automatic setup independently of personal Chrome d
     browser_family: 'edge',
     available_browsers: [{ cdp_endpoint: 'ws://localhost:9222/devtools/browser/personal' }]
   }), /Allow remote debugging/);
+});
+
+test('A changed browser never inherits the saved profiles failure or readiness', () => {
+  const failed = { status: 'unsupported', support_reason: 'Default profile blocked' };
+  const pending = browserSelectionPresentation('chrome:default', 'chrome-a0:default', failed, true);
+  assert.equal(pending.pending, true);
+  assert.equal(pending.readiness, 'Not applied');
+  assert.equal(pending.saveLabel, 'Save and connect');
+  assert.doesNotMatch(pending.detail, /Default profile blocked/);
+  assert.match(pending.detail, /previous selection/);
+  const refreshed = browserSelectionPresentation('chrome:default', 'chrome-a0:default', { status: 'ready' }, true);
+  assert.equal(refreshed.readiness, 'Not applied');
+  const saved = browserSelectionPresentation('chrome-a0:default', 'chrome-a0:default', { status: 'ready' }, true);
+  assert.equal(saved.pending, false);
+  assert.equal(saved.readiness, 'Allowed · Ready');
+  const reverted = browserSelectionPresentation('chrome:default', 'chrome:default', failed, true);
+  assert.equal(reverted.pending, false);
+  assert.equal(reverted.detail, 'Default profile blocked');
 });
 
 test('Browser setup preserves the actual failure for a controlled profile', () => {
