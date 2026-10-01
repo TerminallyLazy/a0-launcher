@@ -356,11 +356,14 @@ function browserSetupHint(browser = {}) {
   const available = Array.isArray(browser?.available_browsers) ? browser.available_browsers : [];
   const selected = browser?.browser_family || browser?.browser_id
     || (available.length === 1 ? available[0]?.family || available[0]?.browser_family || available[0]?.id || available[0]?.browser_id : "");
+  if (/-a0(?::|$)/i.test(String(selected || ""))) {
+    return "A0 opens a separate browser profile and connects automatically. Your everyday browser stays separate. No remote-debugging switch is needed for this profile.";
+  }
   if (/^safari(?::|$)/i.test(String(selected || ""))) {
     return "In Safari > Settings > Advanced, turn on ‘Show features for web developers’. Then open Developer, turn on ‘Allow remote automation’, and click Set up browser again.";
   }
   const hasDebuggingEndpoint = Boolean(String(browser?.cdp_endpoint || "").trim())
-    || available.some((candidate) => Boolean(String(candidate?.cdp_endpoint || "").trim()));
+    || (!selected && available.length === 1 && Boolean(String(available[0]?.cdp_endpoint || "").trim()));
   if (!hasDebuggingEndpoint && available.length === 0) {
     return "Install Chrome, Chromium, Edge, Brave, Opera, or Vivaldi on this computer, then click Set up browser again.";
   }
@@ -369,7 +372,7 @@ function browserSetupHint(browser = {}) {
     : "Open Chrome or Chromium at chrome://inspect/#remote-debugging, Edge at edge://inspect/#remote-debugging, or Opera at opera://inspect/#remote-debugging. Brave and Vivaldi are supported too. Turn on ‘Allow remote debugging for this browser instance,’ then click Set up browser again.";
 }
 
-function watchBrowserSetupFailure(tabId) {
+function watchBrowserSetupFailure(tabId, browser = {}) {
   let timeoutId = 0;
   const stop = () => {
     window.clearTimeout(timeoutId);
@@ -378,7 +381,10 @@ function watchBrowserSetupFailure(tabId) {
   const onState = (event) => {
     const tab = event?.detail?.instanceTabs?.tabs?.find((candidate) => candidate?.id === tabId);
     if (tab?.hostAccess?.code !== "GATEWAY_COMMAND_FAILED") return;
-    window.toastFrontendInfo?.(browserSetupHint(), "Set up browser", 12, "dm-host-browser-setup");
+    const currentBrowser = tab.hostAccess?.gateway?.status?.browser || browser;
+    const message = browserSupportMessage(currentBrowser) || String(tab.hostAccess?.message || "").trim()
+      || "Browser setup did not finish. Check the selected profile and try Set up browser again.";
+    window.toastFrontendInfo?.(message, "Set up browser", 12, "dm-host-browser-setup");
     stop();
   };
   window.addEventListener("dm:state", onState);
@@ -552,7 +558,7 @@ function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
     const button = event.currentTarget;
     const hint = browserSetupHint(browser);
     if (hint) window.toastFrontendInfo?.(hint, "Set up browser", 12, "dm-host-browser-setup");
-    else watchBrowserSetupFailure(tab.id);
+    watchBrowserSetupFailure(tab.id, browser);
     const repairing = browserSupportNeedsRepair(browser);
     if (repairing) {
       button.disabled = true;

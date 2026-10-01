@@ -93,6 +93,12 @@ This scope owns:
 
 ## Work Guidance
 
+- Browser preparation guidance must distinguish A0-controlled profiles (automatic
+  Playwright connection) from personal profiles (explicit remote-debugging
+  approval). Never ask controlled profiles to enable the inspect-page switch.
+  An unrelated browser's endpoint must not suppress selected-profile guidance;
+  preparation failures must preserve the actual runtime reason.
+
 - Keep component scripts pure enough to rerender repeatedly from state without accumulating duplicate event listeners.
 - Use stable element ids inside a component only within that component's loaded fragment; do not rely on ids owned by sibling components.
 - Prefer short task-oriented copy. Avoid explanatory paragraphs when a label, status, or action name will do.

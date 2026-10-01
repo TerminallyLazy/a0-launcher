@@ -356,7 +356,24 @@ test('Browser setup explains how to enable remote debugging when no endpoint is 
   }), /Safari > Settings > Advanced.*Show features for web developers.*Developer.*Allow remote automation/);
 });
 
-test('Browser setup keeps an actionable fallback after the gateway command fails', () => {
+test('Controlled profiles use automatic setup independently of personal Chrome debugging', () => {
+  for (const browser of [
+    { browser_family: 'chrome-a0' },
+    { browser_id: 'edge-a0:default' },
+    { available_browsers: [{ family: 'brave-a0' }] },
+    { browser_family: 'chrome-a0', available_browsers: [{ cdp_endpoint: 'ws://localhost:9222/devtools/browser/personal' }] }
+  ]) {
+    const hint = browserSetupHint(browser);
+    assert.match(hint, /separate browser profile and connects automatically/);
+    assert.doesNotMatch(hint, /Turn on|chrome:\/\/inspect/);
+  }
+  assert.match(browserSetupHint({
+    browser_family: 'edge',
+    available_browsers: [{ cdp_endpoint: 'ws://localhost:9222/devtools/browser/personal' }]
+  }), /Allow remote debugging/);
+});
+
+test('Browser setup preserves the actual failure for a controlled profile', () => {
   let stateListener;
   let toast;
   let removed = false;
@@ -374,11 +391,13 @@ test('Browser setup keeps an actionable fallback after the gateway command fails
   };
 
   try {
-    watchBrowserSetupFailure('instance-tab-1');
+    watchBrowserSetupFailure('instance-tab-1', { browser_family: 'chrome-a0' });
     stateListener({
       detail: {
         instanceTabs: {
-          tabs: [{ id: 'instance-tab-1', hostAccess: { code: 'GATEWAY_COMMAND_FAILED' } }]
+          tabs: [{ id: 'instance-tab-1', hostAccess: {
+            code: 'GATEWAY_COMMAND_FAILED', message: 'The selected profile is still locked.'
+          } }]
         }
       }
     });
@@ -387,7 +406,7 @@ test('Browser setup keeps an actionable fallback after the gateway command fails
     else globalThis.window = originalWindow;
   }
 
-  assert.match(toast[0], /Install Chrome, Chromium, Edge, Brave, Opera, or Vivaldi/);
+  assert.equal(toast[0], 'The selected profile is still locked.');
   assert.deepEqual(toast.slice(1), ['Set up browser', 12, 'dm-host-browser-setup']);
   assert.equal(removed, true);
 });

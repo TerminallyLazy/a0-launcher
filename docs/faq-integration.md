@@ -94,6 +94,18 @@ This validates the shared A0 UI framework under real launcher behavior.
 - Preload API: `window.dockerManagerAPI`
 - App actions: `window.dockerManagerActions`
 
+## Why does A0 controlled profile open a different browser window?
+
+It is a separate, persistent browser profile for Agent Zero. Your everyday
+profile's logins, cookies and extensions stay separate. Launcher connects to
+the controlled profile automatically; do not enable the remote-debugging
+switch in its inspect page. That page's server status is not the connection
+status used by A0. Check Browser status in Launcher instead.
+
+Choose the normal browser profile when you want Agent Zero to use your existing
+browser and its signed-in sites. That path needs the browser's remote-debugging
+approval. Save a changed browser selection before using Set up browser.
+
 ## Can a tunnel keep me signed in while my computer is locked?
 
 The WebUI's **Open Launcher on this computer** uses a fixed app link in
