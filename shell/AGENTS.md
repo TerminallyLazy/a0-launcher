@@ -34,6 +34,8 @@ This scope owns:
   local HTTP(S), an explicit port, no credentials/query/fragment, and only the
   root or `/json/version` path. Persist the stable origin, never a transient
   DevTools WebSocket GUID. Invalid input must leave existing settings intact.
+- Browser verification requests allow 100 seconds for the connector's bounded
+  native approval and input/capture check; computer verification allows 50 seconds.
 
 - Keep renderer windows on `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true` unless an exception is documented here.
 - Do not expose `ipcRenderer`, raw channels, filesystem paths, shell execution, or Docker objects directly to the renderer.

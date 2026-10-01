@@ -4900,7 +4900,7 @@ ipcMain.handle('docker-manager:hostGatewayCommand', async (event, body) => {
         throw createTabTargetError('CLI_UPDATE_REQUIRED', 'Update the connector to use connection tests.');
       }
       const result = await hostGatewaySupervisor.request(hostGatewayLeaseKey(tab),
-        { action, capability: body.capability }, { timeoutMs: 50000, statusOnError: false });
+        { action, capability: body.capability }, { timeoutMs: body.capability === 'browser' ? 100000 : 50000, statusOnError: false });
       return { accepted: true, result };
     }
     if (!['prepare_browser', 'rearm_computer_use', 'setup_computer_use'].includes(action)) {
