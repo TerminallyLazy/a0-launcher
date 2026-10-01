@@ -4,6 +4,7 @@ const { pathToFileURL } = require('node:url');
 const os = require('node:os');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
+const BUNDLED_PREVIEW = require('../package.json').a0BundledPreview === true;
 const childProcess = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { Readable, Transform } = require('node:stream');
@@ -211,6 +212,11 @@ function isLocalRepoContentDir(dir) {
 }
 
 function resolveLocalRepoDir() {
+  if (BUNDLED_PREVIEW) {
+    const bundledDir = app.getAppPath();
+    if (!isLocalRepoContentDir(bundledDir)) throw new Error('Launcher Preview is missing its bundled interface. Reinstall the preview.');
+    return bundledDir;
+  }
   const rawPath = (process.env[LOCAL_REPO_ENV_VAR] || '').trim();
   const useLocalFromCwd = isTruthyEnv(process.env[USE_LOCAL_CONTENT_ENV_VAR]);
   const defaultAppPath = defaultAppRepoArg();
@@ -422,7 +428,7 @@ function setLauncherUpdateState(patch = {}) {
 }
 
 function shouldEnableLauncherAutoUpdate() {
-  return app.isPackaged;
+  return app.isPackaged && !BUNDLED_PREVIEW;
 }
 
 function loadLauncherAutoUpdater() {

@@ -30,6 +30,8 @@ This scope owns:
 
 ## Local Contracts
 
+- Only explicit `a0BundledPreview: true` package metadata selects the installed bundle's own renderer and disables executable auto-update. Missing preview content fails visibly instead of fetching an older release. Normal releases retain remote content and updater behavior. Preview and release share the existing Launcher userData; run only one at a time.
+
 - Manual browser connection addresses are validated in the shell before saving:
   local HTTP(S), an explicit port, no credentials/query/fragment, and only the
   root or `/json/version` path. Persist the stable origin, never a transient
