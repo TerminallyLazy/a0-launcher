@@ -1,4 +1,5 @@
 import { escapeHtml } from "./component-utils.js";
+import { openComputerSetup } from "./computer-setup.js";
 
 const SCOPE_FIELDS = Object.freeze([
   { key: "files", icon: "folder_open", label: "Files read", hint: "Open files in the folder below." },
@@ -391,6 +392,10 @@ function closeDialog(dialog) {
 }
 
 function openHostAccessDialog(tab, state = window.__dmLastState || {}) {
+  return openComputerSetup(tab, state, openHostAccessSettings, configForTarget);
+}
+
+function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
   if (!instanceKey(tab)) return false;
   closeDialog(document.getElementById("hostAccessDialog"));
   const config = configForTarget(state, tab);

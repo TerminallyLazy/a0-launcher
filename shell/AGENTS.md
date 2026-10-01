@@ -107,6 +107,20 @@ This scope owns:
 
 ## Verification
 
+- `host_setup.js` issues bounded fixed-path authenticated setup requests through
+  the selected instance session, preserving its base path and refusing redirects.
+  Use the configured gateway base URL, not the current login or in-page URL;
+  claim identity must remain stable across navigation and Launcher relaunch.
+  Only Launcher chrome can call the setup IPC. Claim identity comes from the
+  shell; credentials never enter the renderer. `verify_host_setup` is capability
+  gated and carries only an allowlisted Browser/Computer selector over the
+  existing tab-leased gateway. Setup never opens a host listener.
+- `setup_link.js` accepts only `a0-launcher://setup` with an optional trailing
+  slash. It opens guidance, carries no payload and grants no access. Packaged
+  apps register the protocol; development runs do not take over registration.
+  Cold/warm launches queue one shell-owned intent until main chrome is ready.
+  The renderer must still ask the user to select and sign in to the same server.
+
 After shell changes, run:
 
 ```bash

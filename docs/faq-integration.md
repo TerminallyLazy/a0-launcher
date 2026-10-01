@@ -1,5 +1,19 @@
 # FAQ: Agent Zero Launcher Integration
 
+## How do I set up Browser or Computer access?
+
+Open an Instance and its computer icon. Connect your computer guides access
+choices, browser preparation and OS permissions. Advanced settings retains
+folder, browser-profile and other scope controls. New guided setup leaves file
+and command access off. Existing permissions stay as saved.
+
+You may start in Launcher, WebUI or iOS. A code from another device joins setup
+progress after normal login to the same server; confirm the computer on that
+device, then review and allow access here. Codes expire in ten minutes and
+grant no permissions. Test browser uses a temporary page. Test computer checks
+a fresh capture without input. Tests cannot clear an existing viewer hold.
+Older servers/connectors keep local setup available and explain required updates.
+
 ## What is Agent Zero Launcher?
 
 A lightweight Electron desktop shell that manages Agent Zero instances via Docker and displays a UI downloaded from GitHub Releases.
@@ -79,6 +93,26 @@ This validates the shared A0 UI framework under real launcher behavior.
 - IPC channels: `docker-manager:*` prefix
 - Preload API: `window.dockerManagerAPI`
 - App actions: `window.dockerManagerActions`
+
+## Can a tunnel keep me signed in while my computer is locked?
+
+The WebUI's **Open Launcher on this computer** uses a fixed app link in
+compatible packaged releases. It opens guidance only; select the same Instance
+and sign in before entering a continuation code. Nothing in the link authorizes
+host access. If no app opens, install/update Launcher or continue manually.
+
+A persistent tunnel keeps a stable server address, not an Agent Zero login
+session. Keep UI Login and UI Password configured for remote WebUI access.
+Tunnel-provider sign-in is separate, and a tunnel does not require locking
+the computer.
+
+After a successful sign-in, Launcher can offer to save credentials using the
+operating system's secure storage. This is optional. Saved valid credentials
+allow automatic WebUI login recovery when storage is available. A fresh
+authentication or operating-system unlock still needs the user at the
+computer; the phone cannot unlock it. An offline gateway alone cannot tell
+whether the computer is locked, asleep, signed out or Launcher is closed.
+Reconnecting must not clear a held host action.
 
 ## What is next?
 

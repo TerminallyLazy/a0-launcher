@@ -10,6 +10,8 @@ const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const dockerManager = require('./docker_manager');
 const developerProjects = require('./developer_projects');
+const { requestHostSetup } = require('./host_setup');
+const { isSetupLink, setupLinkFromArguments } = require('./setup_link');
 const { createCertificateTrust } = require('./remote_certificate_trust');
 const {
   normalizeInstanceColor,
@@ -96,6 +98,27 @@ const OPEN_UI_READY_INTERVAL_MS = 450;
 const HOST_BROWSER_PREPARE_TIMEOUT_MS = 75_000;
 const COMPUTER_USE_RESUME_ARG = '--a0-resume-computer-use=';
 const MAC_ACCESSIBILITY_SETUP_TIMEOUT_MS = 115000;
+
+let pendingSetupLink = setupLinkFromArguments(process.argv);
+const hasInstanceLock = app.requestSingleInstanceLock();
+if (!hasInstanceLock) app.quit();
+function receiveSetupLink() {
+  pendingSetupLink = true;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send('computer-setup-link');
+  }
+}
+app.on('open-url', (event, value) => {
+  event.preventDefault();
+  if (isSetupLink(value)) receiveSetupLink();
+});
+app.on('second-instance', (_event, args) => {
+  if (setupLinkFromArguments(args)) receiveSetupLink();
+  else if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.restore(); mainWindow.focus(); }
+});
 
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-features', 'GlobalShortcutsPortal');
@@ -2714,6 +2737,7 @@ function attachInstanceTabEvents(tab) {
   });
 
   const blockNavigation = (event, url) => {
+    if (isSetupLink(url)) { event.preventDefault(); receiveSetupLink(); return; }
     if (isNavigationAllowedForTab(tab, url)) return;
     if (event && typeof event.preventDefault === 'function') event.preventDefault();
     void openExternalIfSafe(url);
@@ -4798,7 +4822,38 @@ ipcMain.handle('docker-manager:retryHostGateway', async (_event, body) => {
   }
 });
 
-ipcMain.handle('docker-manager:hostGatewayCommand', async (_event, body) => {
+ipcMain.handle('docker-manager:hostSetup', async (event, body) => {
+  try {
+    const tab = isPlainObject(body) ? instanceTabs.get(String(body.tabId || '')) : null;
+    if (!tab || (event.sender !== mainWindow?.webContents && event.sender !== tab.detachedWindow?.webContents)) {
+      throw createTabTargetError('INSTANCE_NOT_FOUND', 'Open setup from this Launcher Instance.');
+    }
+    const wc = tab.view?.webContents;
+    if (!wc || wc.isDestroyed()) throw new Error('Open this Instance and sign in first.');
+    const serverURL = gatewayHostForTab(tab);
+    const origin = new URL(serverURL).origin;
+    if (new URL(wc.getURL()).origin !== origin) throw new Error('Sign in to this Instance first.');
+    const settings = await dockerManager.getHostAccessSettings();
+    const payload = isPlainObject(body.payload) ? body.payload : {};
+    // Stable for this installation and selected server; not an auth credential.
+    // Re-entering an unexpired code after relaunch reconciles the same claim.
+    const claimID = createHash('sha256').update(`${gatewayIdForTab(settings, tab)}|${serverURL}`).digest('hex').slice(0,32);
+    return await requestHostSetup({
+      origin: serverURL, action: body.action, fetch: wc.session.fetch.bind(wc.session),
+      payload: { ...payload, host_id: gatewayIdForTab(settings, tab), host_label: os.hostname(), claim_id: claimID },
+      current: () => instanceTabs.get(tab.id) === tab && gatewayHostForTab(tab) === serverURL && !wc.isDestroyed() && new URL(wc.getURL()).origin === origin
+    });
+  } catch (error) { return dockerManager.toErrorResponse(error); }
+});
+
+ipcMain.handle('docker-manager:takeSetupLink', (event) => {
+  if (event.sender !== mainWindow?.webContents) return false;
+  const pending = pendingSetupLink;
+  pendingSetupLink = false;
+  return pending;
+});
+
+ipcMain.handle('docker-manager:hostGatewayCommand', async (event, body) => {
   try {
     if (!isPlainObject(body)) {
       return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Invalid Host access command' });
@@ -4807,6 +4862,9 @@ ipcMain.handle('docker-manager:hostGatewayCommand', async (_event, body) => {
     if (!instanceTabs.has(tabId)) throw createTabTargetError('INSTANCE_NOT_FOUND', 'Instance tab not found.');
     const action = String(body.action || '');
     const tab = instanceTabs.get(tabId);
+    if (event.sender !== mainWindow?.webContents && event.sender !== tab.detachedWindow?.webContents) {
+      throw createTabTargetError('INVALID_INPUT', 'Open Host access from Launcher.');
+    }
     if (action === 'disconnect') {
       const status = disconnectHostGatewayForTab(tab);
       if (!status) throw createTabTargetError('GATEWAY_NOT_RUNNING', 'Host gateway is not running.');
@@ -4831,6 +4889,14 @@ ipcMain.handle('docker-manager:hostGatewayCommand', async (_event, body) => {
       app.relaunch({ args: [...args, resumeArg] });
       setTimeout(() => app.quit(), 100);
       return { accepted: true, restarting: true };
+    }
+    if (action === 'verify_host_setup') {
+      if (!['browser', 'computer_use'].includes(body.capability) || !tab.hostAccess?.gateway?.features?.includes('host_setup_verify_v1')) {
+        throw createTabTargetError('CLI_UPDATE_REQUIRED', 'Update the connector to use connection tests.');
+      }
+      const result = await hostGatewaySupervisor.request(hostGatewayLeaseKey(tab),
+        { action, capability: body.capability }, { timeoutMs: 50000, statusOnError: false });
+      return { accepted: true, result };
     }
     if (!['prepare_browser', 'rearm_computer_use', 'setup_computer_use'].includes(action)) {
       return dockerManager.toErrorResponse({ code: 'INVALID_INPUT', message: 'Unsupported Host access command' });
@@ -5828,6 +5894,9 @@ app.on('web-contents-created', (_event, webContents) => {
 
 // App lifecycle
 app.whenReady().then(async () => {
+  if (!hasInstanceLock) return;
+  // Development Electron must not replace the installed app's protocol handler.
+  if (app.isPackaged) app.setAsDefaultProtocolClient('a0-launcher');
   trustInstanceCertificates(electronSession.defaultSession);
   // Awaited: a restored Instance tab may start loading right after this.
   await loadCertificateTrust();

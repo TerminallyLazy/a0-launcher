@@ -101,6 +101,15 @@ This scope owns:
 
 ## Verification
 
+- The instance Host access entry opens `computer-setup.js`; Advanced settings
+  retains the full scope/profile controls. Fresh guided setup starts all scopes
+  off, enables only explicit Browser/Computer selections and preserves saved
+  file/command permissions. Shared help/readiness is accepted only for this
+  gateway ID. Setup codes require original-device confirmation before local
+  access review. Permission prompts and verification require explicit buttons.
+  Protocol handoff only opens this guidance; it cannot select a remote address,
+  redeem a code, alter scopes or resume host actions.
+
 After component changes, run:
 
 ```bash
