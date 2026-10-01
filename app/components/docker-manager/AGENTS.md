@@ -104,6 +104,14 @@ This scope owns:
   Connection tests retain a visible outcome from their correlated verified
   evidence even when shared readiness is unavailable. This receipt describes
   the completed test, not a durable permission or future-readiness guarantee.
+- Existing-browser connections may use the explicit local HTTP(S) address shown
+  by the browser when profile discovery is unavailable. The manual field is
+  prefilled from saved configuration, participates in pending-selection state,
+  and requires Save before setup. Never launch a separate profile as fallback.
+- Guided `Connect and check` saves the selected scopes, waits for the replacement
+  gateway connection, then verifies browser input/capture and any ready computer
+  capture automatically. Cancel/close and timeout remove the waiting listener.
+  Saved access and preparation alone are never a completed verification.
 
 - Keep component scripts pure enough to rerender repeatedly from state without accumulating duplicate event listeners.
 - Use stable element ids inside a component only within that component's loaded fragment; do not rely on ids owned by sibling components.

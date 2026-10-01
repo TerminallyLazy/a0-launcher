@@ -2,6 +2,29 @@ import { escapeHtml } from './component-utils.js';
 
 const scopes = ['browser', 'computer_use', 'files', 'file_write', 'code_execution'];
 
+export function waitForRestartedHost(events, tabID, initiallyConnected, timeoutMs = 45000) {
+  let sawDisconnect = !initiallyConnected;
+  let finish;
+  let timer;
+  const promise = new Promise((resolve, reject) => {
+    finish = error => { clearTimeout(timer); events.removeEventListener('dm:state', listener); error ? reject(error) : resolve(); };
+  });
+  const listener = event => {
+    const target = event.detail?.instanceTabs?.tabs?.find(item => item.id === tabID);
+    if (!target) return finish(new Error('The computer connection was closed.'));
+    const runtime = target.hostAccess || {};
+    if (!runtime.connected) sawDisconnect = true;
+    if (['error', 'needs_action'].includes(runtime.state) && !runtime.connected) {
+      finish(new Error('The computer needs attention. Follow the step shown below.'));
+    } else if (sawDisconnect && runtime.connected) finish();
+  };
+  events.addEventListener('dm:state', listener);
+  timer = setTimeout(() => finish(new Error('Connection is taking longer than expected. Check the setup step below.')), timeoutMs);
+  // Cancellation may occur while the save itself is still pending.
+  promise.catch(() => {});
+  return {promise, cancel: () => finish(new Error('Connection check cancelled.'))};
+}
+
 export function setupChoices(config = {}) {
   // New guided setup never inherits the legacy file/command defaults.
   const existing = config.configured === true;
@@ -33,6 +56,13 @@ export function localSetupSteps(tab) {
     const phase = value.setup?.state || value.status || '';
     const allowed = enabled && config.scopes?.[key] === true;
     const ready = allowed && ['ready','active','persistent','allow'].includes(phase);
+    const receipt = details.setup_verifications?.[key];
+    let verified = false;
+    try {
+      verificationMessage({accepted:true,result:receipt}, key);
+      const age = Date.now() / 1000 - receipt.checked_at;
+      verified = ready && runtime.connected === true && age >= 0 && age <= 300;
+    } catch { /* Preparation alone is not verification. */ }
     const reasons = {
       accessibility_required:['Allow Accessibility','Allow Launcher in macOS Accessibility settings.'],
       screen_recording_required:['Allow Screen Recording','Approve the capture permission on this Mac.'],
@@ -40,9 +70,9 @@ export function localSetupSteps(tab) {
     };
     const copy = reasons[phase];
     result.push({id:key,state:ready ? 'ready':phase === 'checking' ? 'checking':'action_on_computer',
-      title:!allowed ? `Allow ${label.toLowerCase()} access`:copy?.[0] || `${label} ${ready ? 'prepared':'setup'}`,
-      detail:!allowed ? 'Choose access below, then select Allow selected access.':copy?.[1] || value.message || 'Prepare access, then verify the selected capability.',
-      action:!allowed ? 'choose_access':phase === 'restart_required' ? 'restart_launcher':key === 'browser' ? 'prepare_browser':'setup_computer', reason:phase});
+      title:verified ? `${label} tested`:!allowed ? `Allow ${label.toLowerCase()} access`:copy?.[0] || `${label} ${ready ? 'prepared':'setup'}`,
+      detail:verified ? (key === 'browser' ? 'Typing and capture checked on a temporary page.' : 'Fresh capture checked. Desktop input was not tested.') : !allowed ? 'Choose access above, then select Connect and check.':copy?.[1] || value.message || 'Select Connect and check to finish setup.',
+      action:!allowed ? 'choose_access':phase === 'restart_required' ? 'restart_launcher':key === 'browser' ? 'prepare_browser':'setup_computer', reason:verified ? 'verified':phase});
   }
   return result;
 }
@@ -58,6 +88,7 @@ export function openComputerSetup(initialTab, state, openAdvanced, resolveConfig
   let busy = false;
   let closed = false;
   let refreshBusy = false;
+  let connectionWait = null;
   const originFocus = document.activeElement;
   const config = resolveConfig(state, tab);
   const choices = setupChoices(config);
@@ -69,7 +100,8 @@ export function openComputerSetup(initialTab, state, openAdvanced, resolveConfig
     <div class="dm-dialog-body">
       <p>Choose what A0 can use. We’ll guide you through any browser or system permissions.</p>
       <div class="dm-setup-choices">${['browser','computer_use'].map(key => `<label><input type="checkbox" data-choice="${key}" ${choices[key] ? 'checked':''}> ${key === 'browser' ? 'Use my browser':'Use my computer'}</label>`).join('')}</div>
-      <button type="button" class="button confirm" data-allow>Allow selected access</button>
+      <button type="button" class="button confirm" data-allow>Connect and check</button>
+      <p class="dm-field-hint">Allows the selected access, connects, and checks it automatically. Approve any browser or system prompt on this computer.</p>
       <p class="dm-field-hint" data-consent>${config.configured ? 'Your other saved permissions stay unchanged.':'Files and command access stay off. You can choose them in Advanced settings.'}</p>
       <ol class="dm-setup-steps" data-steps aria-label="Setup progress"></ol>
       <p class="dm-field-hint" data-freshness role="status"></p>
@@ -87,13 +119,14 @@ export function openComputerSetup(initialTab, state, openAdvanced, resolveConfig
   testResult.hidden = true;
   dialog.querySelector('.dm-dialog-body').append(testResult);
   const renderSteps = steps => {
-    if (closed) return;
+    if (closed || busy) return;
     dialog.querySelector('[data-steps]').innerHTML = steps.filter(s=>s.id === 'connection' ||
       (['browser','computer_use'].includes(s.id) && dialog.querySelector(`[data-choice="${s.id}"]`).checked)).map(step => {
       const ready = step.state === 'ready';
       const actions = {prepare_browser:'Prepare browser',setup_computer:'Check computer permissions',restart_launcher:'Restart Launcher',reconnect:'Reconnect',open_launcher:'Advanced settings'};
       const action = actions[step.action];
-      const canTest = (ready || step.reason === 'ready_to_test') && ['browser','computer_use'].includes(step.id);
+      const canTest = step.reason !== 'verified' && (ready || step.reason === 'ready_to_test') && ['browser','computer_use'].includes(step.id);
+      if (ready) step = {...step, help_text:''};
       return `<li><strong>${ready ? '✓ ':''}${escapeHtml(step.title)}</strong><p>${escapeHtml(step.detail)}</p>${!ready && action ? `<button type="button" class="button" data-step="${escapeHtml(step.action)}" data-reason="${escapeHtml(step.reason || '')}">${action}</button>`:''}${canTest ? `<p>${step.id === 'browser' ? 'Opens a temporary test page to check typing and capture.':'Checks a fresh capture without clicking or typing. Approve any system prompt yourself.'}</p><button type="button" class="button" data-test="${step.id}">Test ${step.id === 'browser' ? 'browser':'computer'}</button>`:''}${step.help_text ? `<details><summary>Show me how</summary><p>${escapeHtml(step.help_text)}</p></details>`:''}</li>`;
     }).join('');
   };
@@ -150,8 +183,23 @@ export function openComputerSetup(initialTab, state, openAdvanced, resolveConfig
         if (!choices.browser && !choices.computer_use) throw new Error('Choose Browser or Computer access first.');
         const current = resolveConfig(latest,tab);
         const selected = {...setupChoices(current),browser:choices.browser,computer_use:choices.computer_use};
+        testResult.hidden = false;
+        testResult.textContent = 'Connecting your computer…';
+        connectionWait = waitForRestartedHost(window, tab.id, tab.hostAccess?.connected === true);
         const result = await window.dockerManagerActions.setInstanceHostAccess(tab,{...current,configured:true,masterEnabled:true,scopes:selected});
         if (result === false) throw new Error('Access was not saved. Check the message and try again.');
+        await connectionWait.promise;
+        connectionWait = null;
+        for (const capability of ['browser','computer_use']) {
+          if (closed) break;
+          if (!selected[capability]) continue;
+          const step = localSetupSteps(tab).find(item => item.id === capability);
+          if (capability === 'computer_use' && step.state !== 'ready') continue;
+          testResult.textContent = capability === 'browser' ? 'Connecting your browser. Approve Chrome’s prompt if shown…' : 'Checking a fresh computer capture…';
+          const verification = await window.dockerManagerActions.hostGatewayCommand(tab.id,'verify_host_setup',{capability});
+          if (verification === false) throw new Error('The connection check needs attention. Follow the setup step below.');
+          if (!closed) testResult.textContent = verificationMessage(verification, capability);
+        }
       } else if (button.hasAttribute('data-claim')) {
         request = await window.dockerManagerActions.hostSetup(tab.id,'claim',{code:dialog.querySelector('[data-code]').value});
         sessionStorage.setItem(requestKey,request.request_id);
@@ -170,13 +218,13 @@ export function openComputerSetup(initialTab, state, openAdvanced, resolveConfig
       }
       await refresh();
     } catch (error) {
-      if (!closed && button.dataset.test) { testResult.hidden = false; testResult.textContent = error.message; }
+      if (!closed) { testResult.hidden = false; testResult.textContent = error.message; }
       window.toastFrontendError?.(error.message,'Computer setup');
     }
-    finally { busy=false;button.disabled=false; }
+    finally { connectionWait?.cancel(); connectionWait=null; busy=false;button.disabled=false; await refresh(); }
   });
   const timer = window.setInterval(refresh,5000);
-  dialog.__hostAccessCleanup = () => { closed=true;clearInterval(timer);window.removeEventListener('dm:state',onState); };
+  dialog.__hostAccessCleanup = () => { closed=true;connectionWait?.cancel();clearInterval(timer);window.removeEventListener('dm:state',onState); };
   window.addEventListener('dm:state',onState);
   document.body.append(dialog);
   window.dockerManagerActions?.hideInstanceTabView?.();

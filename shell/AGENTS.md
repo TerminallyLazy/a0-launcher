@@ -30,6 +30,11 @@ This scope owns:
 
 ## Local Contracts
 
+- Manual browser connection addresses are validated in the shell before saving:
+  local HTTP(S), an explicit port, no credentials/query/fragment, and only the
+  root or `/json/version` path. Persist the stable origin, never a transient
+  DevTools WebSocket GUID. Invalid input must leave existing settings intact.
+
 - Keep renderer windows on `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true` unless an exception is documented here.
 - Do not expose `ipcRenderer`, raw channels, filesystem paths, shell execution, or Docker objects directly to the renderer.
 - The preload bridge exposes named methods only. New IPC must be added to both `shell/preload.js` and `shell/main.js` deliberately.

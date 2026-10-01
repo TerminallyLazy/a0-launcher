@@ -12,6 +12,7 @@ const dockerManager = require('./docker_manager');
 const developerProjects = require('./developer_projects');
 const { requestHostSetup } = require('./host_setup');
 const { isSetupLink, setupLinkFromArguments } = require('./setup_link');
+const { validateBrowserEndpoint } = require('./host_access');
 const { createCertificateTrust } = require('./remote_certificate_trust');
 const {
   normalizeInstanceColor,
@@ -4755,7 +4756,11 @@ ipcMain.handle('docker-manager:setInstanceHostAccess', async (_event, body) => {
       kind: body.kind === 'remote' ? 'remote' : 'local',
       id: typeof body.id === 'string' ? body.id : ''
     };
-    const config = isPlainObject(body.config) ? body.config : {};
+    const config = isPlainObject(body.config) ? { ...body.config } : {};
+    if (Object.prototype.hasOwnProperty.call(config, 'browserEndpoint')) {
+      config.browserSelection = validateBrowserEndpoint(config.browserEndpoint);
+      delete config.browserEndpoint;
+    }
     const key = hostAccessInstanceKey(identity.kind, identity.id);
     const settings = await dockerManager.getHostAccessSettings();
     const existing = key ? settings.instances?.[key] : null;

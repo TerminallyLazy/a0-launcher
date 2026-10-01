@@ -339,6 +339,7 @@ function hostAccessActionMessage(config = {}, runtime = {}) {
 }
 
 function browserOptions(browser = {}, selected = "") {
+  const manual = /^https?:\/\//i.test(selected);
   const options = [{ value: "", label: "Automatic detection" }];
   for (const candidate of Array.isArray(browser?.available_browsers) ? browser.available_browsers : []) {
     const value = String(candidate?.browser_id || candidate?.id || candidate?.cdp_endpoint || "");
@@ -346,10 +347,11 @@ function browserOptions(browser = {}, selected = "") {
     const label = String(candidate?.browser_label || candidate?.label || candidate?.profile_label || candidate?.browser_family || value);
     options.push({ value, label });
   }
-  if (selected && !options.some((entry) => entry.value === selected)) {
+  if (selected && !manual && !options.some((entry) => entry.value === selected)) {
     options.push({ value: selected, label: selected });
   }
-  return options.map((option) => `<option value="${escapeHtml(option.value)}"${option.value === selected ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("");
+  options.push({value:'manual-browser-endpoint', label:'My existing browser — enter connection address'});
+  return options.map((option) => `<option value="${escapeHtml(option.value)}"${option.value === (manual ? 'manual-browser-endpoint' : selected) ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("");
 }
 
 function browserSetupHint(browser = {}) {
@@ -491,6 +493,11 @@ function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
             <div class="dm-field">
               <label for="hostAccessBrowser">Browser to use</label>
               <select id="hostAccessBrowser" class="dm-select" data-host-config-control>${browserOptions(browser, config.browserSelection)}</select>
+              <div class="dm-field" data-browser-endpoint-field hidden>
+                <label for="hostBrowserEndpoint">Browser connection address</label>
+                <input id="hostBrowserEndpoint" class="dm-text-input" type="url" maxlength="512" placeholder="http://127.0.0.1:9222" value="${escapeHtml(/^https?:\/\//i.test(config.browserSelection) ? config.browserSelection : '')}" data-host-config-control>
+                <div class="dm-field-hint">Use the local address and port shown on your browser’s remote-debugging page. Chrome may ask you to approve the connection. This attaches to your existing browser; it does not launch a separate profile.</div>
+              </div>
               <div class="dm-field-hint" data-browser-support-message${browserDetail ? "" : " hidden"}>${escapeHtml(browserDetail)}</div>
             </div>
             <div class="dm-host-access-diagnostics">
@@ -500,6 +507,7 @@ function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
             </div>
           </div>
         </details>
+        <p class="dm-field-hint" role="alert" data-save-error hidden></p>
       </div>
       <div class="dm-dialog-footer dm-host-access-footer">
         <div class="dm-dialog-footer-group">
@@ -526,12 +534,19 @@ function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
   const browserSupport = dialog.querySelector("[data-browser-support-message]");
   const browserSetupButton = dialog.querySelector("[data-prepare-browser]");
   const browserSelectionInput = dialog.querySelector("#hostAccessBrowser");
+  const browserEndpointInput = dialog.querySelector('#hostBrowserEndpoint');
+  const selectedBrowserValue = () => browserSelectionInput?.value === 'manual-browser-endpoint'
+    ? browserEndpointInput.value.trim() : browserSelectionInput?.value;
   let appliedBrowserSelection = config.browserSelection;
   let currentActionMessage = actionMessage;
   const browserAllowedInForm = () => configuredInput?.checked === true && browserInput?.checked === true;
   const syncBrowserPresentation = () => {
     const allowed = browserAllowedInForm();
-    const presentation = browserSelectionPresentation(appliedBrowserSelection, browserSelectionInput?.value, browser, allowed);
+    const manual = browserSelectionInput?.value === 'manual-browser-endpoint';
+    dialog.querySelector('[data-browser-endpoint-field]').hidden = !manual;
+    browserEndpointInput.disabled = !manual || configuredInput?.checked !== true;
+    browserEndpointInput.required = manual && configuredInput?.checked === true;
+    const presentation = browserSelectionPresentation(appliedBrowserSelection, selectedBrowserValue(), browser, allowed);
     const detail = presentation.detail;
     if (browserLabel) browserLabel.textContent = presentation.readiness;
     if (browserSupport) {
@@ -553,6 +568,7 @@ function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
     }
   };
   browserSelectionInput?.addEventListener("change", syncBrowserPresentation);
+  browserEndpointInput?.addEventListener('input', syncBrowserPresentation);
   configuredInput?.addEventListener("change", syncBrowserPresentation);
   browserInput?.addEventListener("change", syncBrowserPresentation);
   syncBrowserPresentation();
@@ -629,9 +645,17 @@ function openHostAccessSettings(tab, state = window.__dmLastState || {}) {
       masterEnabled: enabled,
       folder: folder?.value || "",
       scopes: readScopes(dialog),
-      browserSelection: dialog.querySelector("#hostAccessBrowser")?.value || ""
+      browserSelection: selectedBrowserValue() || "",
+      ...(browserSelectionInput?.value === 'manual-browser-endpoint' ? {browserEndpoint: browserEndpointInput.value} : {})
     });
     if (saved !== false) closeDialog(dialog);
+    else {
+      const error = dialog.querySelector('[data-save-error]');
+      error.textContent = browserSelectionInput?.value === 'manual-browser-endpoint'
+        ? 'Settings were not saved. Check the local address and port shown in your browser, then try again. Launcher’s error notice has more details.'
+        : 'Settings were not saved. Check Launcher’s error notice and try again.';
+      error.hidden = false;
+    }
   });
   document.body.appendChild(dialog);
   const onState = (event) => {

@@ -96,6 +96,13 @@ This validates the shared A0 UI framework under real launcher behavior.
 
 ## Why does A0 controlled profile open a different browser window?
 
+For normal setup, choose Browser and/or Computer access and click **Connect and
+check**. Launcher saves your choices, connects, and checks the selected browser
+automatically. Approve Chrome's connection prompt if it appears. Computer
+capture is checked when its system permissions are ready; otherwise the next
+permission step stays visible. A successful browser check confirms actual typing
+and capture on a temporary page, which is then closed.
+
 It is a separate, persistent browser profile for Agent Zero. Your everyday
 profile's logins, cookies and extensions stay separate. Launcher connects to
 the controlled profile automatically; do not enable the remote-debugging
@@ -109,6 +116,15 @@ While a selection is unsaved, Launcher shows **Not applied**, disables Retry
 and preparation, and offers **Save and connect**. The previous connection's
 error is not the result of testing the newly selected browser. A completed
 connection test keeps its typing/capture result visible in the setup assistant.
+
+If your browser is running its debugging server but is missing from the list,
+choose **My existing browser — enter connection address** under Advanced
+settings. Enter the local HTTP address and port shown by that browser (for
+example `http://127.0.0.1:9222`; use its actual port), then choose **Save and
+connect**. Approve the connection in the browser if prompted, and use **Test
+browser** to verify typing and capture. This attaches to your existing browser
+without opening a separate profile. The connection address accepts localhost,
+127.0.0.1, or IPv6 loopback; do not paste a DevTools WebSocket link or credentials.
 
 ## Can a tunnel keep me signed in while my computer is locked?
 
